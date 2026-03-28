@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, ViewStyle } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Polyline, Stop } from 'react-native-svg';
 import { Colors } from '../../constants/colors';
 
@@ -9,6 +9,7 @@ interface MiniLineChartProps {
   width?: number;
   height?: number;
   showGradient?: boolean;
+  style?: ViewStyle;
 }
 
 export function MiniLineChart({
@@ -17,8 +18,9 @@ export function MiniLineChart({
   width = 80,
   height = 36,
   showGradient = false,
+  style,
 }: MiniLineChartProps) {
-  if (!data || data.length < 2) return <View style={{ width, height }} />;
+  if (!data || data.length < 2) return <View style={[{ width, height }, style]} />;
 
   const min = Math.min(...data);
   const max = Math.max(...data);
@@ -47,6 +49,7 @@ export function MiniLineChart({
   const fillPath = `${pathD} L ${(width - padding).toFixed(1)} ${height} L ${padding} ${height} Z`;
 
   return (
+    <View style={style}>
     <Svg width={width} height={height}>
       {showGradient && (
         <Defs>
@@ -68,5 +71,6 @@ export function MiniLineChart({
         strokeLinejoin="round"
       />
     </Svg>
+    </View>
   );
 }

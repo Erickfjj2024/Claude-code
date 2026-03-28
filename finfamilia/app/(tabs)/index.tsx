@@ -1,9 +1,73 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AllocationBar } from '../../components/charts/AllocationBar';
+import { MiniLineChart } from '../../components/charts/MiniLineChart';
+import { BillItem } from '../../components/BillItem';
+import { Card } from '../../components/ui/Card';
+import { IconBox } from '../../components/ui/IconBox';
+import { MoneyText } from '../../components/ui/MoneyText';
+import { ProgressBar } from '../../components/ui/ProgressBar';
 import { Colors } from '../../constants/colors';
-import { greeting } from '../../lib/utils';
+import { fmt, fmtVariation, greeting, pct } from '../../lib/utils';
+import type { Bill } from '../../types';
+
+// ─── Mock data ────────────────────────────────────────────────────────────────
+
+const MOCK_ACCOUNTS = [
+  { id: '1', name: 'PicPay Empresas', balance: 18_420.5, icon: '🏦' },
+  { id: '2', name: 'Nubank',          balance: 6_380.0,  icon: '💜' },
+  { id: '3', name: 'Poupança',        balance: 4_200.0,  icon: '🏧' },
+];
+const TOTAL_BALANCE = MOCK_ACCOUNTS.reduce((s, a) => s + a.balance, 0);
+const BALANCE_VARIATION = 2.34;
+const BALANCE_HISTORY = [26000, 27500, 26800, 28100, 29000, 29001];
+
+const MOCK_BUDGET_CATEGORIES = [
+  { name: 'Moradia',      icon: '🏠', color: '#FF6B6B', spent: 3200, limit: 3500 },
+  { name: 'Alimentação',  icon: '🍔', color: '#FF9F43', spent: 1850, limit: 2000 },
+  { name: 'Transporte',   icon: '🚗', color: '#4DA6FF', spent: 680,  limit: 800  },
+  { name: 'Lazer',        icon: '🎮', color: '#9B59B6', spent: 920,  limit: 800  },
+];
+const BUDGET_TOTAL_SPENT  = 6650;
+const BUDGET_TOTAL_LIMIT  = 8500;
+
+const MOCK_BILLS: Bill[] = [
+  {
+    id: '1', name: 'Aluguel',        amount: 2200,  due_date: '2026-04-01',
+    status: 'pending',  recurrence: 'monthly', created_at: '',
+    reminder_days: [3],
+  },
+  {
+    id: '2', name: 'Internet',       amount: 129.9, due_date: '2026-04-05',
+    status: 'pending',  recurrence: 'monthly', created_at: '',
+    reminder_days: [3],
+  },
+  {
+    id: '3', name: 'Fatura Nubank',  amount: 1840,  due_date: '2026-04-08',
+    status: 'overdue',  recurrence: 'monthly', created_at: '',
+    reminder_days: [3],
+  },
+];
+
+const MOCK_INVESTMENTS_TOTAL     = 125_400;
+const MOCK_INVESTMENTS_VARIATION = 2.65;
+const MOCK_ALLOCATION = [
+  { label: 'RF',     value: 45, color: Colors.accent  },
+  { label: 'FII',    value: 20, color: Colors.blue    },
+  { label: 'Ações',  value: 20, color: Colors.purple  },
+  { label: 'ETF',    value: 10, color: Colors.orange  },
+  { label: 'Cripto', value: 5,  color: Colors.yellow  },
+];
+
+const AI_LAST_TIP =
+  'Com Selic a 13,75%, títulos pós-fixados (CDB 110% CDI) seguem atrativos para reserva de emergência. Sua alocação em renda fixa de 45% está adequada ao perfil moderado.';
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const router = useRouter();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView
@@ -11,116 +75,569 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* ── 1. HEADER ── */}
         <View style={styles.header}>
           <View>
             <Text style={styles.greeting}>{greeting()},</Text>
             <Text style={styles.appName}>FinFamília 👨‍👩‍👧</Text>
           </View>
-          <View style={styles.avatars}>
-            <View style={[styles.avatar, styles.avatar1]}>
-              <Text style={styles.avatarText}>EU</Text>
-            </View>
-            <View style={[styles.avatar, styles.avatar2]}>
-              <Text style={styles.avatarText}>EL</Text>
+          <View style={styles.headerRight}>
+            <Pressable onPress={() => {}} style={styles.settingsBtn}>
+              <Text style={{ fontSize: 20 }}>⚙️</Text>
+            </Pressable>
+            <View style={styles.avatars}>
+              <View style={[styles.avatar, styles.avatar1]}>
+                <Text style={styles.avatarText}>EU</Text>
+              </View>
+              <View style={[styles.avatar, styles.avatar2]}>
+                <Text style={styles.avatarText}>EL</Text>
+              </View>
             </View>
           </View>
         </View>
 
-        {/* Placeholder content */}
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderIcon}>🏠</Text>
-          <Text style={styles.placeholderTitle}>Tela Home</Text>
-          <Text style={styles.placeholderDesc}>
-            Dashboard completo será construído na Fase 3.{'\n'}
-            Navegação funcionando ✓
-          </Text>
-        </View>
+        {/* ── 2. SALDO TOTAL ── */}
+        <BalanceCard />
+
+        {/* ── 3. ORÇAMENTO DO MÊS ── */}
+        <BudgetCard />
+
+        {/* ── 4. PRÓXIMAS CONTAS ── */}
+        <BillsCard router={router} />
+
+        {/* ── 5. INVESTIMENTOS ── */}
+        <InvestmentsCard router={router} />
+
+        {/* ── 6. CARD IA ── */}
+        <AICard router={router} />
       </ScrollView>
     </SafeAreaView>
   );
 }
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function BalanceCard() {
+  return (
+    <View style={styles.balanceCard}>
+      {/* Glow effect */}
+      <View style={styles.balanceGlow} />
+
+      <View style={styles.balanceHeader}>
+        <Text style={styles.balanceLabel}>Saldo total</Text>
+        <View style={styles.variationBadge}>
+          <Text style={styles.variationText}>{fmtVariation(BALANCE_VARIATION)} mês</Text>
+        </View>
+      </View>
+
+      <MoneyText value={TOTAL_BALANCE} size={34} style={styles.balanceValue} />
+
+      <MiniLineChart
+        data={BALANCE_HISTORY}
+        color={Colors.accent}
+        width={200}
+        height={40}
+        showGradient
+        style={{ marginVertical: 12, alignSelf: 'center' }}
+      />
+
+      {/* Mini account cards */}
+      <View style={styles.accountsRow}>
+        {MOCK_ACCOUNTS.map((acc) => (
+          <View key={acc.id} style={styles.accountMini}>
+            <Text style={styles.accountIcon}>{acc.icon}</Text>
+            <Text style={styles.accountName} numberOfLines={1}>{acc.name}</Text>
+            <Text style={styles.accountBalance}>
+              {fmt(acc.balance).replace('R$\u00a0', 'R$ ')}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function BudgetCard() {
+  const totalPct = pct(BUDGET_TOTAL_SPENT, BUDGET_TOTAL_LIMIT);
+
+  return (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>💰 Orçamento — Março</Text>
+        <Text style={styles.sectionLink}>Ver tudo →</Text>
+      </View>
+
+      {/* Barra geral */}
+      <View style={styles.budgetSummary}>
+        <View style={styles.budgetSummaryRow}>
+          <Text style={styles.budgetSpent}>{fmt(BUDGET_TOTAL_SPENT)}</Text>
+          <Text style={styles.budgetLimit}>de {fmt(BUDGET_TOTAL_LIMIT)}</Text>
+          <Text style={[
+            styles.budgetPct,
+            { color: totalPct >= 100 ? Colors.red : totalPct >= 80 ? Colors.orange : Colors.accent },
+          ]}>
+            {totalPct.toFixed(0)}%
+          </Text>
+        </View>
+        <ProgressBar value={BUDGET_TOTAL_SPENT} max={BUDGET_TOTAL_LIMIT} autoColor height={8} />
+      </View>
+
+      {/* Grid 2x2 */}
+      <View style={styles.budgetGrid}>
+        {MOCK_BUDGET_CATEGORIES.map((cat) => {
+          const p = pct(cat.spent, cat.limit);
+          return (
+            <View key={cat.name} style={styles.budgetGridItem}>
+              <View style={styles.budgetItemHeader}>
+                <IconBox icon={cat.icon} color={cat.color} size={32} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.budgetItemName}>{cat.name}</Text>
+                  <Text style={styles.budgetItemValues}>
+                    {fmt(cat.spent)}
+                    <Text style={styles.budgetItemLimit}> / {fmt(cat.limit)}</Text>
+                  </Text>
+                </View>
+                <Text style={[
+                  styles.budgetItemPct,
+                  { color: p >= 100 ? Colors.red : p >= 80 ? Colors.orange : Colors.textSec },
+                ]}>
+                  {p.toFixed(0)}%
+                </Text>
+              </View>
+              <ProgressBar
+                value={cat.spent}
+                max={cat.limit}
+                color={cat.color}
+                autoColor
+                height={4}
+                style={{ marginTop: 6 }}
+              />
+            </View>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
+function BillsCard({ router }: { router: ReturnType<typeof useRouter> }) {
+  return (
+    <Card style={styles.section} padding={0}>
+      <View style={[styles.sectionHeader, { paddingHorizontal: 16, paddingTop: 16 }]}>
+        <Text style={styles.sectionTitle}>📋 Próximas contas</Text>
+        <Pressable onPress={() => router.push('/bills')}>
+          <Text style={styles.sectionLink}>Ver todas →</Text>
+        </Pressable>
+      </View>
+      {MOCK_BILLS.map((bill, idx) => (
+        <View key={bill.id}>
+          <BillItem bill={bill} onPress={() => router.push('/bills')} />
+          {idx < MOCK_BILLS.length - 1 && <View style={styles.divider} />}
+        </View>
+      ))}
+      <View style={{ height: 8 }} />
+    </Card>
+  );
+}
+
+function InvestmentsCard({ router }: { router: ReturnType<typeof useRouter> }) {
+  return (
+    <Card style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>📈 Investimentos</Text>
+        <Pressable onPress={() => router.push('/investments')}>
+          <Text style={styles.sectionLink}>Ver carteira →</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.investRow}>
+        <View>
+          <Text style={styles.investLabel}>Total investido</Text>
+          <MoneyText value={MOCK_INVESTMENTS_TOTAL} size={22} style={{ marginTop: 2 }} />
+        </View>
+        <View style={styles.investVarBadge}>
+          <Text style={styles.investVarText}>
+            {fmtVariation(MOCK_INVESTMENTS_VARIATION)} mês
+          </Text>
+        </View>
+      </View>
+
+      <AllocationBar
+        segments={MOCK_ALLOCATION}
+        height={10}
+        showLegend
+        style={{ marginTop: 14 }}
+      />
+    </Card>
+  );
+}
+
+function AICard({ router }: { router: ReturnType<typeof useRouter> }) {
+  return (
+    <Pressable
+      onPress={() => router.push('/ai-chat')}
+      style={({ pressed }) => [styles.aiCard, pressed && { opacity: 0.88 }]}
+    >
+      {/* gradient overlay */}
+      <View style={styles.aiGradient} />
+
+      <View style={styles.aiHeader}>
+        <View style={styles.aiIconWrap}>
+          <Text style={{ fontSize: 26 }}>🤖</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.aiTitle}>Consultor IA</Text>
+          <View style={styles.aiOnlineRow}>
+            <View style={styles.aiOnlineDot} />
+            <Text style={styles.aiOnlineText}>Online agora</Text>
+          </View>
+        </View>
+        <Text style={styles.aiChevron}>›</Text>
+      </View>
+
+      <View style={styles.aiTipBox}>
+        <Text style={styles.aiTipLabel}>Última sugestão</Text>
+        <Text style={styles.aiTipText} numberOfLines={3}>{AI_LAST_TIP}</Text>
+      </View>
+
+      <View style={styles.aiCTA}>
+        <Text style={styles.aiCTAText}>Conversar com a IA →</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: Colors.bg,
   },
-  scroll: {
-    flex: 1,
-  },
+  scroll: { flex: 1 },
   content: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 32,
+    gap: 16,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 4,
   },
   greeting: {
     fontFamily: 'DMSans_400Regular',
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSec,
   },
   appName: {
     fontFamily: 'DMSans_700Bold',
     fontSize: 22,
     color: Colors.text,
-    marginTop: 2,
+    marginTop: 1,
   },
-  avatars: {
+  headerRight: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
+  settingsBtn: {
+    padding: 4,
+  },
+  avatars: { flexDirection: 'row' },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: Colors.bg,
   },
-  avatar1: {
-    backgroundColor: Colors.accent,
-    zIndex: 2,
-  },
-  avatar2: {
-    backgroundColor: Colors.blue,
-    marginLeft: -10,
-    zIndex: 1,
-  },
+  avatar1: { backgroundColor: Colors.accent, zIndex: 2 },
+  avatar2: { backgroundColor: Colors.blue, marginLeft: -10, zIndex: 1 },
   avatarText: {
     fontFamily: 'DMSans_700Bold',
-    fontSize: 11,
+    fontSize: 10,
     color: Colors.bg,
   },
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
+
+  // Balance card
+  balanceCard: {
     backgroundColor: Colors.card,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: Colors.border,
+    padding: 20,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  placeholderIcon: {
-    fontSize: 48,
-    marginBottom: 12,
+  balanceGlow: {
+    position: 'absolute',
+    top: -40,
+    right: -40,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: Colors.accentGlow,
+    opacity: 0.25,
   },
-  placeholderTitle: {
-    fontFamily: 'DMSans_700Bold',
-    fontSize: 20,
-    color: Colors.text,
-    marginBottom: 8,
+  balanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  placeholderDesc: {
+  balanceLabel: {
     fontFamily: 'DMSans_400Regular',
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textSec,
-    textAlign: 'center',
-    lineHeight: 20,
+  },
+  variationBadge: {
+    backgroundColor: Colors.accentDim,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.accent + '40',
+  },
+  variationText: {
+    fontFamily: 'DMSans_600SemiBold',
+    fontSize: 12,
+    color: Colors.accent,
+  },
+  balanceValue: {
+    marginTop: 6,
+  },
+  accountsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  accountMini: {
+    flex: 1,
+    backgroundColor: Colors.cardHover,
+    borderRadius: 12,
+    padding: 10,
+    gap: 3,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  accountIcon: { fontSize: 16 },
+  accountName: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 10,
+    color: Colors.textSec,
+  },
+  accountBalance: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 11,
+    color: Colors.text,
+  },
+
+  // Sections
+  section: {},
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 15,
+    color: Colors.text,
+  },
+  sectionLink: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
+    color: Colors.accent,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginHorizontal: 16,
+  },
+
+  // Budget
+  budgetSummary: {
+    marginBottom: 14,
+    gap: 8,
+  },
+  budgetSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  budgetSpent: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 18,
+    color: Colors.text,
+  },
+  budgetLimit: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 13,
+    color: Colors.textSec,
+    flex: 1,
+  },
+  budgetPct: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 16,
+  },
+  budgetGrid: {
+    gap: 10,
+  },
+  budgetGridItem: {
+    backgroundColor: Colors.cardHover,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  budgetItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  budgetItemName: {
+    fontFamily: 'DMSans_600SemiBold',
+    fontSize: 13,
+    color: Colors.text,
+  },
+  budgetItemValues: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 11,
+    color: Colors.text,
+    marginTop: 2,
+  },
+  budgetItemLimit: {
+    fontFamily: 'JetBrainsMono_400Regular',
+    color: Colors.textSec,
+  },
+  budgetItemPct: {
+    fontFamily: 'JetBrainsMono_700Bold',
+    fontSize: 13,
+  },
+
+  // Investments
+  investRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 2,
+  },
+  investLabel: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 12,
+    color: Colors.textSec,
+  },
+  investVarBadge: {
+    backgroundColor: Colors.accentDim,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: Colors.accent + '40',
+  },
+  investVarText: {
+    fontFamily: 'DMSans_600SemiBold',
+    fontSize: 12,
+    color: Colors.accent,
+  },
+
+  // AI Card
+  aiCard: {
+    backgroundColor: Colors.card,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.accent + '44',
+    padding: 18,
+    overflow: 'hidden',
+    gap: 14,
+  },
+  aiGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.accentDim,
+    opacity: 0.4,
+  },
+  aiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  aiIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: Colors.accentDim,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.accent + '55',
+  },
+  aiTitle: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 16,
+    color: Colors.text,
+  },
+  aiOnlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 3,
+  },
+  aiOnlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: Colors.accent,
+  },
+  aiOnlineText: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 12,
+    color: Colors.accent,
+  },
+  aiChevron: {
+    fontSize: 26,
+    color: Colors.accent,
+    marginRight: -4,
+  },
+  aiTipBox: {
+    backgroundColor: Colors.bg,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 6,
+  },
+  aiTipLabel: {
+    fontFamily: 'DMSans_600SemiBold',
+    fontSize: 11,
+    color: Colors.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  aiTipText: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 13,
+    color: Colors.textSec,
+    lineHeight: 19,
+  },
+  aiCTA: {
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  aiCTAText: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 14,
+    color: Colors.bg,
   },
 });
